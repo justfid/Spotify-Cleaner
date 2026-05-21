@@ -555,6 +555,7 @@
     let lastVolume = 0.5;
     let currentPlayingUri = null;
     let pendingSeek = null;   // { uri, ms } — seek fires once SDK confirms track is playing
+    let currentUserId = null;
 
     // ── Spotify Web Playback SDK ──────────────────────────────────────────────
     function initPlayer() {
@@ -699,6 +700,7 @@
     async function init() {
       try {
         const me = await apiFetch('/api/me');
+        currentUserId = me.id;
         document.getElementById('user-name').textContent = me.display_name || me.id;
         if (me.images?.[0]?.url) {
           document.getElementById('user-avatar').src = me.images[0].url;
@@ -706,7 +708,7 @@
           document.getElementById('user-avatar').style.display = 'none';
         }
         const pl = await apiFetch('/api/playlists');
-        playlists = pl;
+        playlists = pl.filter(p => p.owner.id === currentUserId);
         renderPlaylistList();
       } catch (e) {
         if (e.status === 401) location.href = '/';
@@ -730,6 +732,10 @@
     function renderPlaylistList() {
       const container = document.getElementById('playlist-list');
       container.innerHTML = '';
+      if (!playlists.length) {
+        container.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--muted);font-size:0.85rem;">No playlists you own found</div>';
+        return;
+      }
       playlists.forEach(pl => {
         const div = document.createElement('div');
         div.className = 'playlist-item' + (selectedPlaylist?.id === pl.id ? ' selected' : '');

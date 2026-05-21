@@ -384,6 +384,20 @@
 
     .btn-skip:hover { color: var(--text); border-color: #555; }
 
+    .btn-undo {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 0.5rem 1.2rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .btn-undo:hover:not(:disabled) { color: var(--text); border-color: #555; }
+    .btn-undo:disabled { opacity: 0.25; cursor: default; }
+
     .key-hints {
       text-align: center;
       color: var(--muted);
@@ -637,12 +651,13 @@
         </button>
       </div>
 
-      <div style="text-align:center; margin-bottom:0.75rem;">
+      <div style="text-align:center; margin-bottom:0.75rem; display:flex; gap:0.6rem; justify-content:center;">
+        <button class="btn-undo" id="btn-undo" onclick="undoLast()" disabled>↩ Undo</button>
         <button class="btn-skip" onclick="decide('skip')">Skip</button>
       </div>
 
       <div class="key-hints">
-        <kbd>←</kbd> Remove &nbsp;·&nbsp; <kbd>→</kbd> Keep &nbsp;·&nbsp; <kbd>Space</kbd> Skip
+        <kbd>←</kbd> Remove &nbsp;·&nbsp; <kbd>→</kbd> Keep &nbsp;·&nbsp; <kbd>Space</kbd> Skip &nbsp;·&nbsp; <kbd>Z</kbd> Undo
       </div>
     </div>
 
@@ -679,6 +694,7 @@
     let tracks = [];
     let currentIndex = 0;
     let toRemove = [];          // track objects
+    let history = [];           // [{action, track}] for undo
     const audio = document.getElementById('preview-audio');
 
     // ── Init ─────────────────────────────────────────────────────────────────
@@ -740,6 +756,13 @@
 
     // ── Start review ─────────────────────────────────────────────────────────
     async function startReview() {
+      // Unlock the audio element here, inside the button-click gesture, before
+      // any awaits. Setting src + calling play() in the same sync frame as the
+      // user gesture establishes the browser's autoplay permission on this
+      // element for the rest of the session.
+      audio.volume = 0.6;
+      audio.play().catch(() => {});
+
       showStep('loading');
       try {
         let endpoint;
@@ -753,12 +776,14 @@
         tracks = await apiFetch(endpoint);
         currentIndex = 0;
         toRemove = [];
+        history = [];
         if (!tracks.length) {
           alert('No tracks found.');
           showStep('select');
           return;
         }
         showStep('review');
+        updateUndoBtn();
         renderTrack();
       } catch (e) {
         alert('Failed to load tracks: ' + (e.message || 'unknown error'));
@@ -795,15 +820,19 @@
       document.getElementById('track-artist').textContent = t.artists;
       document.getElementById('track-album').textContent = t.album;
 
-      // Preview audio
-      stopAudio();
+      // Preview audio — reuse the same element (no src reset) so the browser
+      // keeps the autoplay permission granted during the Start button gesture.
+      audio.pause();
       if (t.preview_url) {
         document.getElementById('no-preview-badge').classList.add('hidden');
+        document.getElementById('audio-indicator').classList.add('playing');
         audio.src = t.preview_url;
         audio.volume = 0.6;
-        audio.play().catch(() => {});
-        document.getElementById('audio-indicator').classList.add('playing');
+        audio.play().catch(() => {
+          document.getElementById('audio-indicator').classList.remove('playing');
+        });
       } else {
+        audio.src = '';
         document.getElementById('no-preview-badge').classList.remove('hidden');
         document.getElementById('audio-indicator').classList.remove('playing');
       }
@@ -819,6 +848,8 @@
     function decide(action) {
       if (currentIndex >= tracks.length) return;
 
+      history.push({ action, track: tracks[currentIndex] });
+
       if (action === 'remove') {
         toRemove.push(tracks[currentIndex]);
         flashOverlay('remove');
@@ -827,10 +858,28 @@
         flashOverlay('keep');
         animateBtn('btn-keep');
       }
-      // skip: no action, just advance
+      // skip: just advance
 
       currentIndex++;
+      updateUndoBtn();
       renderTrack();
+    }
+
+    // ── Undo ─────────────────────────────────────────────────────────────────
+    function undoLast() {
+      if (!history.length) return;
+      const last = history.pop();
+      if (last.action === 'remove') {
+        const idx = toRemove.findLastIndex(t => t.id === last.track.id);
+        if (idx !== -1) toRemove.splice(idx, 1);
+      }
+      currentIndex--;
+      updateUndoBtn();
+      renderTrack();
+    }
+
+    function updateUndoBtn() {
+      document.getElementById('btn-undo').disabled = history.length === 0;
     }
 
     function flashOverlay(type) {
@@ -933,6 +982,7 @@
       selectedPlaylist = null;
       tracks = [];
       toRemove = [];
+      history = [];
       currentIndex = 0;
       document.getElementById('card-liked').classList.remove('active');
       document.getElementById('card-playlist').classList.remove('active');
@@ -951,9 +1001,10 @@
     // ── Keyboard shortcuts ───────────────────────────────────────────────────
     document.addEventListener('keydown', e => {
       if (!document.getElementById('step-review').classList.contains('hidden')) {
-        if (e.key === 'ArrowLeft')  { e.preventDefault(); decide('remove'); }
-        if (e.key === 'ArrowRight') { e.preventDefault(); decide('keep'); }
-        if (e.key === ' ')          { e.preventDefault(); decide('skip'); }
+        if (e.key === 'ArrowLeft')              { e.preventDefault(); decide('remove'); }
+        if (e.key === 'ArrowRight')             { e.preventDefault(); decide('keep'); }
+        if (e.key === ' ')                      { e.preventDefault(); decide('skip'); }
+        if (e.key === 'z' || e.key === 'Z')     { e.preventDefault(); undoLast(); }
       }
     });
 

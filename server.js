@@ -1,0 +1,258 @@
+require('dotenv').config();
+const express = require('express');
+const session = require('express-session');
+const axios = require('axios');
+const path = require('path');
+const crypto = require('crypto');
+
+const app = express();
+const PORT = process.env.PORT || 8888;
+const REDIRECT_URI = `http://127.0.0.1:${PORT}/callback`;
+const SCOPES = [
+  'user-library-read',
+  'user-library-modify',
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'playlist-modify-public',
+  'playlist-modify-private',
+].join(' ');
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'dev-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 },
+}));
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+app.get('/login', (req, res) => {
+  const state = crypto.randomBytes(16).toString('hex');
+  req.session.oauthState = state;
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id: process.env.SPOTIFY_CLIENT_ID,
+    scope: SCOPES,
+    redirect_uri: REDIRECT_URI,
+    state,
+  });
+  res.redirect(`https://accounts.spotify.com/authorize?${params}`);
+});
+
+app.get('/callback', async (req, res) => {
+  const { code, state, error } = req.query;
+
+  if (error) return res.redirect('/?error=' + encodeURIComponent(error));
+  if (state !== req.session.oauthState) return res.redirect('/?error=state_mismatch');
+
+  try {
+    const tokenRes = await axios.post(
+      'https://accounts.spotify.com/api/token',
+      new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT_URI,
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: 'Basic ' + Buffer.from(
+            `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+          ).toString('base64'),
+        },
+      }
+    );
+
+    req.session.accessToken = tokenRes.data.access_token;
+    req.session.refreshToken = tokenRes.data.refresh_token;
+    req.session.tokenExpiry = Date.now() + tokenRes.data.expires_in * 1000;
+    delete req.session.oauthState;
+    res.redirect('/app');
+  } catch (err) {
+    console.error('Token exchange error:', err.response?.data || err.message);
+    res.redirect('/?error=token_exchange_failed');
+  }
+});
+
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/');
+});
+
+app.get('/api/auth-status', (req, res) => {
+  res.json({ loggedIn: !!req.session.accessToken });
+});
+
+// ── Token refresh middleware ───────────────────────────────────────────────────
+
+async function ensureToken(req, res, next) {
+  if (!req.session.accessToken) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  if (Date.now() > req.session.tokenExpiry - 60000) {
+    try {
+      const tokenRes = await axios.post(
+        'https://accounts.spotify.com/api/token',
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: req.session.refreshToken,
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Authorization: 'Basic ' + Buffer.from(
+              `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
+            ).toString('base64'),
+          },
+        }
+      );
+      req.session.accessToken = tokenRes.data.access_token;
+      req.session.tokenExpiry = Date.now() + tokenRes.data.expires_in * 1000;
+    } catch (err) {
+      req.session.destroy();
+      return res.status(401).json({ error: 'Token refresh failed' });
+    }
+  }
+  next();
+}
+
+function spotifyAPI(req) {
+  return axios.create({
+    baseURL: 'https://api.spotify.com/v1',
+    headers: { Authorization: `Bearer ${req.session.accessToken}` },
+  });
+}
+
+// ── API Routes ─────────────────────────────────────────────────────────────────
+
+app.get('/api/me', ensureToken, async (req, res) => {
+  try {
+    const r = await spotifyAPI(req).get('/me');
+    res.json(r.data);
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+app.get('/api/playlists', ensureToken, async (req, res) => {
+  try {
+    const api = spotifyAPI(req);
+    let playlists = [];
+    let url = '/me/playlists?limit=50';
+    while (url) {
+      const r = await api.get(url);
+      playlists = playlists.concat(r.data.items);
+      url = r.data.next ? r.data.next.replace('https://api.spotify.com/v1', '') : null;
+    }
+    res.json(playlists);
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+// Fetch all liked songs (paginated)
+app.get('/api/liked-songs', ensureToken, async (req, res) => {
+  try {
+    const api = spotifyAPI(req);
+    let tracks = [];
+    let url = '/me/tracks?limit=50';
+    while (url) {
+      const r = await api.get(url);
+      tracks = tracks.concat(r.data.items.map(item => ({
+        id: item.track.id,
+        name: item.track.name,
+        artists: item.track.artists.map(a => a.name).join(', '),
+        album: item.track.album.name,
+        albumArt: item.track.album.images[0]?.url || null,
+        preview_url: item.track.preview_url,
+        uri: item.track.uri,
+      })));
+      url = r.data.next ? r.data.next.replace('https://api.spotify.com/v1', '') : null;
+    }
+    res.json(tracks);
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+// Fetch all tracks in a playlist (paginated)
+app.get('/api/playlist/:id/tracks', ensureToken, async (req, res) => {
+  try {
+    const api = spotifyAPI(req);
+    let tracks = [];
+    let url = `/playlists/${req.params.id}/tracks?limit=50`;
+    while (url) {
+      const r = await api.get(url);
+      tracks = tracks.concat(
+        r.data.items
+          .filter(item => item.track && item.track.id)
+          .map(item => ({
+            id: item.track.id,
+            name: item.track.name,
+            artists: item.track.artists.map(a => a.name).join(', '),
+            album: item.track.album.name,
+            albumArt: item.track.album.images[0]?.url || null,
+            preview_url: item.track.preview_url,
+            uri: item.track.uri,
+          }))
+      );
+      url = r.data.next ? r.data.next.replace('https://api.spotify.com/v1', '') : null;
+    }
+    res.json(tracks);
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+// Remove liked songs in batch (max 50 per request)
+app.post('/api/remove-liked', ensureToken, async (req, res) => {
+  const { ids } = req.body;
+  if (!ids || !ids.length) return res.json({ removed: 0 });
+  try {
+    const api = spotifyAPI(req);
+    for (let i = 0; i < ids.length; i += 50) {
+      await api.delete('/me/tracks', { data: { ids: ids.slice(i, i + 50) } });
+    }
+    res.json({ removed: ids.length });
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+// Remove playlist tracks in batch (max 100 per request)
+app.post('/api/remove-playlist-tracks', ensureToken, async (req, res) => {
+  const { playlistId, uris } = req.body;
+  if (!playlistId || !uris || !uris.length) return res.json({ removed: 0 });
+  try {
+    const api = spotifyAPI(req);
+    for (let i = 0; i < uris.length; i += 100) {
+      await api.delete(`/playlists/${playlistId}/tracks`, {
+        data: { tracks: uris.slice(i, i + 100).map(uri => ({ uri })) },
+      });
+    }
+    res.json({ removed: uris.length });
+  } catch (err) {
+    res.status(err.response?.status || 500).json(err.response?.data || { error: 'Failed' });
+  }
+});
+
+// ── Static page routes ─────────────────────────────────────────────────────────
+
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/app', ensureToken, (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
+
+// ── Start ──────────────────────────────────────────────────────────────────────
+
+app.listen(PORT, () => {
+  console.log('\n╔════════════════════════════════════════════════╗');
+  console.log('║          Spotify Playlist Cleaner              ║');
+  console.log('╚════════════════════════════════════════════════╝\n');
+  console.log('Setup instructions:');
+  console.log('  1. Go to https://developer.spotify.com/dashboard');
+  console.log('  2. Create an app (or use an existing one)');
+  console.log(`  3. Add redirect URI: http://127.0.0.1:${PORT}/callback`);
+  console.log('  4. Copy Client ID and Client Secret into .env');
+  console.log(`\nServer running at: http://localhost:${PORT}\n`);
+});

@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Cleaner</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green: #1db954;
+      --green-hover: #1ed760;
+      --red: #e84040;
+      --red-hover: #ff5555;
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface2: #1c1c1c;
+      --border: #2a2a2a;
+      --text: #e8e8e8;
+      --muted: #666;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-left { display: flex; align-items: center; gap: 0.75rem; }
+
+    .logo-dot {
+      width: 28px; height: 28px;
+      background: var(--green);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .logo-dot svg { width: 16px; height: 16px; fill: #000; }
+
+    .app-title { font-weight: 700; font-size: 1rem; }
+
+    .user-info { display: flex; align-items: center; gap: 0.75rem; font-size: 0.85rem; color: var(--muted); }
+
+    .avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--surface2);
+    }
+
+    .logout-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.3rem 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .logout-btn:hover { color: var(--text); border-color: #555; }
+
+    /* ── Main layout ── */
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+      max-width: 600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* ── Source selector (Step 1) ── */
+    #step-select {
+      width: 100%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .step-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      letter-spacing: -0.01em;
+    }
+
+    .step-sub { color: var(--muted); margin-bottom: 2rem; font-size: 0.9rem; }
+
+    .source-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .source-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: center;
+    }
+
+    .source-card:hover, .source-card.active {
+      border-color: var(--green);
+      background: #0f1f14;
+    }
+
+    .source-card .icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .source-card .label { font-weight: 600; font-size: 0.95rem; }
+    .source-card .desc { color: var(--muted); font-size: 0.8rem; margin-top: 0.25rem; }
+
+    /* Playlist picker */
+    #playlist-picker { margin-bottom: 2rem; }
+
+    .picker-label { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.5rem; }
+
+    .playlist-list {
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .playlist-list::-webkit-scrollbar { width: 4px; }
+    .playlist-list::-webkit-scrollbar-track { background: transparent; }
+    .playlist-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .playlist-item {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      cursor: pointer;
+      transition: background 0.1s;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .playlist-item:last-child { border-bottom: none; }
+    .playlist-item:hover, .playlist-item.selected { background: var(--surface2); }
+    .playlist-item.selected { background: #0f1f14; }
+
+    .playlist-thumb {
+      width: 36px; height: 36px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+
+    .playlist-name { font-size: 0.88rem; font-weight: 500; }
+    .playlist-count { font-size: 0.78rem; color: var(--muted); }
+
+    .playlist-check {
+      margin-left: auto;
+      color: var(--green);
+      font-size: 1rem;
+      opacity: 0;
+    }
+
+    .playlist-item.selected .playlist-check { opacity: 1; }
+
+    .start-btn {
+      width: 100%;
+      background: var(--green);
+      color: #000;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 0.9rem;
+      border: none;
+      border-radius: 500px;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: background 0.15s, transform 0.15s;
+    }
+
+    .start-btn:hover:not(:disabled) { background: var(--green-hover); transform: scale(1.02); }
+    .start-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Loading ── */
+    #step-loading {
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+
+    .loading-text { color: var(--muted); font-size: 0.9rem; }
+
+    /* ── Review step ── */
+    #step-review {
+      width: 100%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .progress-bar-wrap {
+      width: 100%;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--green);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    .track-counter { text-align: center; color: var(--muted); font-size: 0.82rem; margin-bottom: 1.5rem; }
+
+    /* Track card */
+    .track-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .album-art-wrap { position: relative; width: 100%; padding-top: 100%; }
+
+    .album-art {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .no-art {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface2);
+      font-size: 4rem;
+    }
+
+    /* Audio wave indicator */
+    .audio-indicator {
+      position: absolute;
+      bottom: 1rem;
+      right: 1rem;
+      background: rgba(0,0,0,0.7);
+      border-radius: 20px;
+      padding: 0.3rem 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .audio-indicator.playing { opacity: 1; }
+
+    .wave-bar {
+      width: 3px;
+      background: var(--green);
+      border-radius: 2px;
+      animation: wave 0.8s ease-in-out infinite;
+    }
+
+    .wave-bar:nth-child(2) { animation-delay: 0.1s; }
+    .wave-bar:nth-child(3) { animation-delay: 0.2s; }
+    .wave-bar:nth-child(4) { animation-delay: 0.3s; }
+
+    .no-preview-badge {
+      position: absolute;
+      bottom: 1rem;
+      right: 1rem;
+      background: rgba(0,0,0,0.7);
+      border-radius: 20px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    .track-info {
+      padding: 1.25rem;
+    }
+
+    .track-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-artist {
+      font-size: 0.9rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-album {
+      font-size: 0.78rem;
+      color: #444;
+      margin-top: 0.15rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Action buttons */
+    .action-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 1rem 1.4rem;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      transition: transform 0.15s, background 0.15s, border-color 0.15s;
+      min-width: 90px;
+    }
+
+    .action-btn .icon { font-size: 1.5rem; }
+
+    .action-btn:hover { transform: scale(1.06); }
+
+    .btn-remove { }
+    .btn-remove:hover, .btn-remove.pressed { background: #2a0e0e; border-color: var(--red); color: var(--red); }
+
+    .btn-keep { }
+    .btn-keep:hover, .btn-keep.pressed { background: #0a1f11; border-color: var(--green); color: var(--green); }
+
+    .btn-skip {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 0.5rem 1.2rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .btn-skip:hover { color: var(--text); border-color: #555; }
+
+    .key-hints {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+    }
+
+    kbd {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      font-family: inherit;
+      font-size: 0.72rem;
+    }
+
+    /* ── Summary step ── */
+    #step-summary {
+      width: 100%;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .summary-header { text-align: center; margin-bottom: 2rem; }
+    .summary-count {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: var(--red);
+      display: block;
+    }
+
+    .summary-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-height: 320px;
+      overflow-y: auto;
+      margin-bottom: 1.5rem;
+    }
+
+    .summary-list::-webkit-scrollbar { width: 4px; }
+    .summary-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .summary-track {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.85rem;
+    }
+
+    .summary-track:last-child { border-bottom: none; }
+
+    .summary-thumb {
+      width: 36px; height: 36px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+
+    .summary-track-name { font-weight: 500; }
+    .summary-track-artist { color: var(--muted); font-size: 0.78rem; }
+
+    .confirm-btn {
+      width: 100%;
+      background: var(--red);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 0.9rem;
+      border: none;
+      border-radius: 500px;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: background 0.15s;
+      margin-bottom: 0.75rem;
+    }
+
+    .confirm-btn:hover { background: var(--red-hover); }
+    .confirm-btn:disabled { opacity: 0.5; cursor: default; }
+
+    .cancel-btn {
+      width: 100%;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 0.8rem;
+      border-radius: 500px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .cancel-btn:hover { color: var(--text); border-color: #555; }
+
+    .empty-summary {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+    }
+
+    /* ── Done step ── */
+    #step-done {
+      text-align: center;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .done-icon { font-size: 3rem; margin-bottom: 1rem; }
+    .done-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .done-sub { color: var(--muted); margin-bottom: 2rem; }
+
+    .restart-btn {
+      background: var(--green);
+      color: #000;
+      font-weight: 700;
+      padding: 0.85rem 2rem;
+      border: none;
+      border-radius: 500px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.15s;
+    }
+
+    .restart-btn:hover { background: var(--green-hover); }
+
+    /* ── Utilities ── */
+    .hidden { display: none !important; }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes wave {
+      0%, 100% { height: 6px; }
+      50% { height: 16px; }
+    }
+
+    /* Swipe feedback overlay */
+    .swipe-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 5rem;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 100;
+    }
+
+    .swipe-overlay.show-remove { background: rgba(232,64,64,0.15); opacity: 1; }
+    .swipe-overlay.show-keep { background: rgba(29,185,84,0.15); opacity: 1; }
+  </style>
+</head>
+<body>
+
+  <!-- Flash overlay for key feedback -->
+  <div class="swipe-overlay" id="swipe-overlay"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <div class="logo-dot">
+        <svg viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      </div>
+      <span class="app-title">Spotify Cleaner</span>
+    </div>
+    <div class="user-info">
+      <img class="avatar" id="user-avatar" src="" alt="" />
+      <span id="user-name"></span>
+      <a href="/logout"><button class="logout-btn">Log out</button></a>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Step 1: Choose source -->
+    <div id="step-select">
+      <h2 class="step-title">What do you want to clean?</h2>
+      <p class="step-sub">Pick a source to review your tracks one by one.</p>
+
+      <div class="source-options">
+        <div class="source-card" id="card-liked" onclick="selectSource('liked')">
+          <div class="icon">♥</div>
+          <div class="label">Liked Songs</div>
+          <div class="desc">Your saved tracks</div>
+        </div>
+        <div class="source-card" id="card-playlist" onclick="selectSource('playlist')">
+          <div class="icon">≡</div>
+          <div class="label">A Playlist</div>
+          <div class="desc">Any playlist you own</div>
+        </div>
+      </div>
+
+      <div id="playlist-picker" class="hidden">
+        <div class="picker-label">Select a playlist</div>
+        <div class="playlist-list" id="playlist-list"></div>
+      </div>
+
+      <button class="start-btn" id="start-btn" disabled onclick="startReview()">Start Reviewing</button>
+    </div>
+
+    <!-- Step 2: Loading -->
+    <div id="step-loading" class="hidden">
+      <div class="spinner"></div>
+      <p class="loading-text" id="loading-text">Loading tracks…</p>
+    </div>
+
+    <!-- Step 3: Review -->
+    <div id="step-review" class="hidden">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="track-counter" id="track-counter"></div>
+
+      <div class="track-card" id="track-card">
+        <div class="album-art-wrap">
+          <img class="album-art" id="album-art" src="" alt="" />
+          <div class="no-art hidden" id="no-art">🎵</div>
+          <div class="audio-indicator" id="audio-indicator">
+            <div class="wave-bar" style="height:8px"></div>
+            <div class="wave-bar" style="height:12px"></div>
+            <div class="wave-bar" style="height:6px"></div>
+            <div class="wave-bar" style="height:10px"></div>
+          </div>
+          <div class="no-preview-badge hidden" id="no-preview-badge">No preview</div>
+        </div>
+        <div class="track-info">
+          <div class="track-name" id="track-name"></div>
+          <div class="track-artist" id="track-artist"></div>
+          <div class="track-album" id="track-album"></div>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button class="action-btn btn-remove" id="btn-remove" onclick="decide('remove')">
+          <span class="icon">←</span>
+          <span>REMOVE</span>
+        </button>
+        <button class="action-btn btn-keep" id="btn-keep" onclick="decide('keep')">
+          <span class="icon">→</span>
+          <span>KEEP</span>
+        </button>
+      </div>
+
+      <div style="text-align:center; margin-bottom:0.75rem;">
+        <button class="btn-skip" onclick="decide('skip')">Skip</button>
+      </div>
+
+      <div class="key-hints">
+        <kbd>←</kbd> Remove &nbsp;·&nbsp; <kbd>→</kbd> Keep &nbsp;·&nbsp; <kbd>Space</kbd> Skip
+      </div>
+    </div>
+
+    <!-- Step 4: Summary -->
+    <div id="step-summary" class="hidden">
+      <div class="summary-header">
+        <span class="summary-count" id="remove-count">0</span>
+        <p style="color:var(--muted); margin-top:0.5rem;" id="summary-subtitle"></p>
+      </div>
+
+      <div id="summary-list-wrap"></div>
+
+      <button class="confirm-btn" id="confirm-btn" onclick="commitDeletions()">Delete these tracks from Spotify</button>
+      <button class="cancel-btn" onclick="goToSelect()">Cancel, start over</button>
+    </div>
+
+    <!-- Step 5: Done -->
+    <div id="step-done" class="hidden">
+      <div class="done-icon">✓</div>
+      <div class="done-title" id="done-title">Done!</div>
+      <p class="done-sub" id="done-sub"></p>
+      <button class="restart-btn" onclick="goToSelect()">Clean another source</button>
+    </div>
+
+  </main>
+
+  <audio id="preview-audio" preload="none"></audio>
+
+  <script>
+    // ── State ────────────────────────────────────────────────────────────────
+    let source = null;          // 'liked' | 'playlist'
+    let selectedPlaylist = null;
+    let playlists = [];
+    let tracks = [];
+    let currentIndex = 0;
+    let toRemove = [];          // track objects
+    const audio = document.getElementById('preview-audio');
+
+    // ── Init ─────────────────────────────────────────────────────────────────
+    async function init() {
+      try {
+        const me = await apiFetch('/api/me');
+        document.getElementById('user-name').textContent = me.display_name || me.id;
+        if (me.images?.[0]?.url) {
+          document.getElementById('user-avatar').src = me.images[0].url;
+        } else {
+          document.getElementById('user-avatar').style.display = 'none';
+        }
+        // Preload playlists in background
+        const pl = await apiFetch('/api/playlists');
+        playlists = pl;
+        renderPlaylistList();
+      } catch (e) {
+        if (e.status === 401) location.href = '/';
+      }
+    }
+
+    // ── Source selection ─────────────────────────────────────────────────────
+    function selectSource(s) {
+      source = s;
+      document.getElementById('card-liked').classList.toggle('active', s === 'liked');
+      document.getElementById('card-playlist').classList.toggle('active', s === 'playlist');
+
+      if (s === 'playlist') {
+        document.getElementById('playlist-picker').classList.remove('hidden');
+        document.getElementById('start-btn').disabled = !selectedPlaylist;
+      } else {
+        document.getElementById('playlist-picker').classList.add('hidden');
+        document.getElementById('start-btn').disabled = false;
+      }
+    }
+
+    function renderPlaylistList() {
+      const container = document.getElementById('playlist-list');
+      container.innerHTML = '';
+      playlists.forEach(pl => {
+        const div = document.createElement('div');
+        div.className = 'playlist-item' + (selectedPlaylist?.id === pl.id ? ' selected' : '');
+        div.innerHTML = `
+          <img class="playlist-thumb" src="${pl.images?.[0]?.url || ''}" onerror="this.style.display='none'" />
+          <div>
+            <div class="playlist-name">${escHtml(pl.name)}</div>
+            <div class="playlist-count">${pl.tracks.total} tracks</div>
+          </div>
+          <span class="playlist-check">✓</span>
+        `;
+        div.onclick = () => {
+          selectedPlaylist = pl;
+          renderPlaylistList();
+          document.getElementById('start-btn').disabled = false;
+        };
+        container.appendChild(div);
+      });
+    }
+
+    // ── Start review ─────────────────────────────────────────────────────────
+    async function startReview() {
+      showStep('loading');
+      try {
+        let endpoint;
+        if (source === 'liked') {
+          endpoint = '/api/liked-songs';
+          document.getElementById('loading-text').textContent = 'Loading liked songs…';
+        } else {
+          endpoint = `/api/playlist/${selectedPlaylist.id}/tracks`;
+          document.getElementById('loading-text').textContent = `Loading "${selectedPlaylist.name}"…`;
+        }
+        tracks = await apiFetch(endpoint);
+        currentIndex = 0;
+        toRemove = [];
+        if (!tracks.length) {
+          alert('No tracks found.');
+          showStep('select');
+          return;
+        }
+        showStep('review');
+        renderTrack();
+      } catch (e) {
+        alert('Failed to load tracks: ' + (e.message || 'unknown error'));
+        showStep('select');
+      }
+    }
+
+    // ── Track rendering ──────────────────────────────────────────────────────
+    function renderTrack() {
+      if (currentIndex >= tracks.length) {
+        showSummary();
+        return;
+      }
+
+      const t = tracks[currentIndex];
+      const total = tracks.length;
+      const pct = (currentIndex / total) * 100;
+
+      document.getElementById('progress-fill').style.width = pct + '%';
+      document.getElementById('track-counter').textContent =
+        `Track ${currentIndex + 1} of ${total}  ·  ${toRemove.length} marked for removal`;
+
+      // Album art
+      if (t.albumArt) {
+        document.getElementById('album-art').src = t.albumArt;
+        document.getElementById('album-art').classList.remove('hidden');
+        document.getElementById('no-art').classList.add('hidden');
+      } else {
+        document.getElementById('album-art').classList.add('hidden');
+        document.getElementById('no-art').classList.remove('hidden');
+      }
+
+      document.getElementById('track-name').textContent = t.name;
+      document.getElementById('track-artist').textContent = t.artists;
+      document.getElementById('track-album').textContent = t.album;
+
+      // Preview audio
+      stopAudio();
+      if (t.preview_url) {
+        document.getElementById('no-preview-badge').classList.add('hidden');
+        audio.src = t.preview_url;
+        audio.volume = 0.6;
+        audio.play().catch(() => {});
+        document.getElementById('audio-indicator').classList.add('playing');
+      } else {
+        document.getElementById('no-preview-badge').classList.remove('hidden');
+        document.getElementById('audio-indicator').classList.remove('playing');
+      }
+    }
+
+    function stopAudio() {
+      audio.pause();
+      audio.src = '';
+      document.getElementById('audio-indicator').classList.remove('playing');
+    }
+
+    // ── Decision ─────────────────────────────────────────────────────────────
+    function decide(action) {
+      if (currentIndex >= tracks.length) return;
+
+      if (action === 'remove') {
+        toRemove.push(tracks[currentIndex]);
+        flashOverlay('remove');
+        animateBtn('btn-remove');
+      } else if (action === 'keep') {
+        flashOverlay('keep');
+        animateBtn('btn-keep');
+      }
+      // skip: no action, just advance
+
+      currentIndex++;
+      renderTrack();
+    }
+
+    function flashOverlay(type) {
+      const el = document.getElementById('swipe-overlay');
+      el.textContent = type === 'remove' ? '✕' : '✓';
+      el.className = 'swipe-overlay show-' + type;
+      setTimeout(() => { el.className = 'swipe-overlay'; }, 300);
+    }
+
+    function animateBtn(id) {
+      const btn = document.getElementById(id);
+      btn.classList.add('pressed');
+      setTimeout(() => btn.classList.remove('pressed'), 200);
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────────────
+    function showSummary() {
+      stopAudio();
+      showStep('summary');
+
+      const count = toRemove.length;
+      document.getElementById('remove-count').textContent = count;
+      document.getElementById('remove-count').style.color = count > 0 ? 'var(--red)' : 'var(--green)';
+
+      const subtitle = count === 0
+        ? 'Nothing to remove — your library is clean!'
+        : `track${count === 1 ? '' : 's'} marked for removal`;
+      document.getElementById('summary-subtitle').textContent = subtitle;
+
+      const wrap = document.getElementById('summary-list-wrap');
+      if (count === 0) {
+        wrap.innerHTML = '<div class="empty-summary">🎉 All done — nothing to delete.</div>';
+        document.getElementById('confirm-btn').disabled = true;
+        document.getElementById('confirm-btn').textContent = 'Nothing to delete';
+      } else {
+        const list = document.createElement('div');
+        list.className = 'summary-list';
+        toRemove.forEach(t => {
+          const row = document.createElement('div');
+          row.className = 'summary-track';
+          row.innerHTML = `
+            <img class="summary-thumb" src="${t.albumArt || ''}" onerror="this.style.display='none'" />
+            <div>
+              <div class="summary-track-name">${escHtml(t.name)}</div>
+              <div class="summary-track-artist">${escHtml(t.artists)}</div>
+            </div>
+          `;
+          list.appendChild(row);
+        });
+        wrap.innerHTML = '';
+        wrap.appendChild(list);
+        document.getElementById('confirm-btn').disabled = false;
+        document.getElementById('confirm-btn').textContent = `Delete ${count} track${count === 1 ? '' : 's'} from Spotify`;
+      }
+    }
+
+    // ── Commit deletions ─────────────────────────────────────────────────────
+    async function commitDeletions() {
+      if (!toRemove.length) return;
+
+      const btn = document.getElementById('confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting…';
+
+      try {
+        let result;
+        if (source === 'liked') {
+          const ids = toRemove.map(t => t.id);
+          result = await apiFetch('/api/remove-liked', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids }),
+          });
+        } else {
+          const uris = toRemove.map(t => t.uri);
+          result = await apiFetch('/api/remove-playlist-tracks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ playlistId: selectedPlaylist.id, uris }),
+          });
+        }
+
+        showStep('done');
+        document.getElementById('done-title').textContent = `Removed ${result.removed} track${result.removed === 1 ? '' : 's'}`;
+        document.getElementById('done-sub').textContent =
+          source === 'liked'
+            ? 'Tracks removed from your Liked Songs.'
+            : `Tracks removed from "${selectedPlaylist.name}".`;
+      } catch (e) {
+        btn.disabled = false;
+        btn.textContent = 'Retry deletion';
+        alert('Deletion failed: ' + (e.message || 'unknown error'));
+      }
+    }
+
+    // ── Navigation ───────────────────────────────────────────────────────────
+    function goToSelect() {
+      stopAudio();
+      source = null;
+      selectedPlaylist = null;
+      tracks = [];
+      toRemove = [];
+      currentIndex = 0;
+      document.getElementById('card-liked').classList.remove('active');
+      document.getElementById('card-playlist').classList.remove('active');
+      document.getElementById('playlist-picker').classList.add('hidden');
+      document.getElementById('start-btn').disabled = true;
+      showStep('select');
+    }
+
+    function showStep(name) {
+      const steps = ['select', 'loading', 'review', 'summary', 'done'];
+      steps.forEach(s => {
+        document.getElementById('step-' + s).classList.toggle('hidden', s !== name);
+      });
+    }
+
+    // ── Keyboard shortcuts ───────────────────────────────────────────────────
+    document.addEventListener('keydown', e => {
+      if (!document.getElementById('step-review').classList.contains('hidden')) {
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); decide('remove'); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); decide('keep'); }
+        if (e.key === ' ')          { e.preventDefault(); decide('skip'); }
+      }
+    });
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    async function apiFetch(url, options = {}) {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        const err = new Error(`HTTP ${res.status}`);
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ── Boot ─────────────────────────────────────────────────────────────────
+    init();
+  </script>
+</body>
+</html>

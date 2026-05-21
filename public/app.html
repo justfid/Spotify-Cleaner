@@ -553,7 +553,8 @@
     let deviceId = null;
     let isMuted = false;
     let lastVolume = 0.5;
-    let currentPlayingUri = null;   // used to cancel stale seek after track changes
+    let currentPlayingUri = null;
+    let pendingSeek = null;   // { uri, ms } — seek fires once SDK confirms track is playing
 
     // ── Spotify Web Playback SDK ──────────────────────────────────────────────
     function initPlayer() {
@@ -585,11 +586,23 @@
         deviceId = null;
       });
 
-      // Mirror Spotify's actual playing state in the wave indicator
+      // Mirror playing state in the wave indicator, and fire any pending seek
+      // once the SDK confirms the target track is actually playing.
       player.addListener('player_state_changed', state => {
         if (!state) return;
         document.getElementById('audio-indicator')
           .classList.toggle('playing', !state.paused);
+
+        if (
+          pendingSeek &&
+          !state.paused &&
+          state.position < 3000 &&
+          state.track_window.current_track.uri === pendingSeek.uri
+        ) {
+          const ms = pendingSeek.ms;
+          pendingSeek = null;
+          player.seek(ms);
+        }
       });
 
       player.addListener('account_error', ({ message }) => {
@@ -609,6 +622,7 @@
     async function playTrack(uri, id) {
       if (!deviceId) return;
       currentPlayingUri = uri;
+      pendingSeek = null;
 
       // Start playback and fetch audio analysis in parallel
       const [, analysis] = await Promise.all([
@@ -620,12 +634,26 @@
         apiFetch(`/api/track-analysis/${id}`).catch(() => null),
       ]);
 
-      // Seek to the loudest section — bail if the user already moved on
-      if (analysis && currentPlayingUri === uri) {
-        const best = findLoudestSection(analysis.sections, analysis.duration);
-        if (best && best.start > 3) {
-          player.seek(Math.round(best.start * 1000));
-        }
+      if (!analysis || currentPlayingUri !== uri) return;
+
+      const best = findLoudestSection(analysis.sections, analysis.duration);
+      if (!best || best.start <= 3) return;
+
+      const ms = Math.round(best.start * 1000);
+
+      // Check if the SDK has already started playing this track while we were
+      // awaiting. If so, seek immediately. Otherwise store it for
+      // player_state_changed to fire once the track actually begins.
+      const state = await player.getCurrentState();
+      if (
+        state &&
+        !state.paused &&
+        state.position < 3000 &&
+        state.track_window.current_track.uri === uri
+      ) {
+        player.seek(ms);
+      } else {
+        pendingSeek = { uri, ms };
       }
     }
 

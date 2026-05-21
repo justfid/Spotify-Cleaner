@@ -1,6 +1,8 @@
 # Spotify Cleaner
 
-Review your Liked Songs or any playlist one track at a time. Keep what you love, remove the rest — with 30-second preview playback and batch or instant deletion.
+Review your Liked Songs or any playlist one track at a time. Keep what you love, remove the rest — with full track playback and batch or instant deletion.
+
+> **Spotify Premium is required.** Full track playback uses the [Spotify Web Playback SDK](https://developer.spotify.com/documentation/web-playback-sdk), which only works with Premium accounts.
 
 ## Setup
 
@@ -72,12 +74,6 @@ Closing the panel returns you exactly to where you were in the swiping session.
 
 ---
 
-## No-preview tracks
-
-If a track has no 30-second preview available (common for some regions and newer releases), a countdown badge appears and the track auto-advances after 3 seconds so the session keeps moving.
-
----
-
 ## Deletion behaviour
 
 - **Liked Songs**: uses `DELETE /v1/me/tracks`
@@ -88,6 +84,7 @@ If a track has no 30-second preview available (common for some regions and newer
 
 ## Tech stack
 
-- **Backend**: Node.js / Express — handles Spotify OAuth (authorization code flow), token storage and refresh, all API calls
+- **Backend**: Node.js / Express — handles Spotify OAuth (authorization code flow), token storage and refresh, all Spotify API calls (play, pause, delete)
 - **Frontend**: single-page vanilla JS — no frameworks
-- **Auth**: tokens are stored server-side in an encrypted session; the browser never sees them
+- **Playback**: Spotify Web Playback SDK — streams full tracks directly to a virtual device in the browser (Premium required)
+- **Auth**: tokens are stored server-side in an encrypted session; the frontend receives them only via `/api/token` for the SDK handshake

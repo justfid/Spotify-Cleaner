@@ -4,13 +4,15 @@ const express = require('express');
 const session = require('express-session');
 const path = require('path');
 const { SESSION_SECRET } = require('./config');
-const { registerAuthRoutes } = require('./auth');
-const { registerRoutes } = require('./routes');
+const errorHandler = require('./middleware/errorHandler');
+const registerAuthRoutes = require('./routes/auth');
+const registerPlayerRoutes = require('./routes/player');
+const registerPlaylistsRoutes = require('./routes/playlists');
 
 const app = express();
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
@@ -19,13 +21,10 @@ app.use(session({
 }));
 
 registerAuthRoutes(app);
-registerRoutes(app);
+registerPlayerRoutes(app);
+registerPlaylistsRoutes(app);
 
 // Must be registered last — catches errors forwarded via next(err) from all routes
-app.use((err, req, res, next) => {
-  const status = err.response?.status || 500;
-  const body = err.response?.data || { error: err.message || 'Internal server error' };
-  res.status(status).json(body);
-});
+app.use(errorHandler);
 
 module.exports = app;

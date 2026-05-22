@@ -84,11 +84,11 @@ Closing the panel returns you exactly to where you were in the swiping session.
 
 ## Tech stack
 
-- **Backend**: Node.js / Express — handles Spotify OAuth (authorization code flow), token storage and refresh, all Spotify API calls (play, pause, delete)
-- **Frontend**: single-page vanilla JS — no frameworks
+- **Backend**: Node.js / Express — modular structure under `/server/` (routes, services, middleware)
+- **Frontend**: single-page vanilla JS split into modules under `/public/js/`
 - **Playback**: Spotify Web Playback SDK — streams full tracks directly to a virtual device in the browser (Premium required)
 - **Auth**: tokens are stored server-side in an encrypted session; the frontend receives them only via `/api/token` for the SDK handshake
-- **Tests**: Jest + Supertest — 71 tests across three files covering the Spotify service layer, OAuth flow, and all API routes
+- **Tests**: Jest + Supertest — 79 tests across 6 files mirroring the server folder structure
 
 ---
 
@@ -96,6 +96,12 @@ Closing the panel returns you exactly to where you were in the swiping session.
 
 ```bash
 npm test
+```
+
+Run a single test file:
+
+```bash
+npx jest tests/services/spotify.test.js
 ```
 
 Tests use a separate `.env.test` file (fake credentials) and never hit the real Spotify API. The suite runs sequentially (`--runInBand`) to avoid module registry conflicts across test files.

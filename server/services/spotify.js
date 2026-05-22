@@ -1,3 +1,5 @@
+'use strict';
+
 const axios = require('axios');
 
 function client(req) {
@@ -85,4 +87,8 @@ async function pause(req) {
   await client(req).put('/me/player/pause').catch(() => {});
 }
 
-module.exports = { getMe, getPlaylists, getLikedSongs, getPlaylistTracks, removeLikedSongs, removePlaylistTracks, getTrackAnalysis, play, pause };
+module.exports = {
+  getMe, getPlaylists, getLikedSongs, getPlaylistTracks,
+  removeLikedSongs, removePlaylistTracks, getTrackAnalysis,
+  play, pause,
+};

@@ -1,7 +1,8 @@
 require('dotenv').config();
 
-const app = require('./app');
-const { PORT, REDIRECT_URI } = require('./config');
+// Use explicit path — require('./server') would resolve to this file (circular)
+const app = require('./server/index');
+const { PORT, REDIRECT_URI } = require('./server/config');
 
 app.listen(PORT, '127.0.0.1', () => {
   console.log('\n╔════════════════════════════════════════════════╗');

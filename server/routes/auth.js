@@ -1,6 +1,8 @@
+'use strict';
+
 const crypto = require('crypto');
 const axios = require('axios');
-const { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES } = require('./config');
+const { CLIENT_ID, CLIENT_SECRET, REDIRECT_URI, SCOPES } = require('../config');
 
 const authHeader = () =>
   'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
@@ -14,39 +16,12 @@ async function exchangeCode(code) {
   return res.data;
 }
 
-async function refreshToken(refreshToken) {
-  const res = await axios.post(
-    'https://accounts.spotify.com/api/token',
-    new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken }),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: authHeader() } }
-  );
-  return res.data;
-}
-
-async function ensureToken(req, res, next) {
-  if (!req.session.accessToken) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-  if (Date.now() > req.session.tokenExpiry - 60000) {
-    try {
-      const data = await refreshToken(req.session.refreshToken);
-      req.session.accessToken = data.access_token;
-      req.session.tokenExpiry = Date.now() + data.expires_in * 1000;
-    } catch {
-      req.session.destroy();
-      return res.status(401).json({ error: 'Token refresh failed' });
-    }
-  }
-  next();
-}
-
-function registerAuthRoutes(app) {
+module.exports = function registerAuthRoutes(app) {
   app.get('/login', (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
     req.session.oauthState = state;
-    // Save the session explicitly before redirecting — express-session's automatic
-    // save fires on res.end() but a redirect can race ahead of the write to the
-    // store, leaving the session empty when Spotify redirects back to /callback.
+    // Save explicitly before redirect — express-session's automatic save fires on res.end()
+    // but a redirect can race ahead of the store write, leaving oauthState missing on callback.
     req.session.save(err => {
       if (err) {
         console.error('Session save error in /login:', err);
@@ -68,8 +43,8 @@ function registerAuthRoutes(app) {
 
     if (error) return res.redirect('/?error=' + encodeURIComponent(error));
 
-    // Guard against duplicate callback hits (browser retry, redirect loop, etc.)
-    // oauthState is deleted before the async exchange so a second hit finds it gone.
+    // Guard against duplicate callback hits — oauthState is deleted before the async
+    // exchange so a second hit finds it gone.
     if (!req.session.oauthState) {
       if (req.session.accessToken) return res.redirect('/app');
       return res.redirect('/?error=invalid_callback');
@@ -103,6 +78,4 @@ function registerAuthRoutes(app) {
   app.get('/api/auth-status', (req, res) => {
     res.json({ loggedIn: !!req.session.accessToken });
   });
-}
-
-module.exports = { registerAuthRoutes, ensureToken };
+};

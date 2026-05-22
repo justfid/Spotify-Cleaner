@@ -1,83 +1,12 @@
 'use strict';
 
-// axios is used inside auth.js for token exchange and refresh
 jest.mock('axios');
 
 const axios = require('axios');
 const request = require('supertest');
-const { ensureToken } = require('../auth');
-const app = require('../app');
+const app = require('../../server/index');
 
 afterEach(() => jest.clearAllMocks());
-
-// ── ensureToken middleware ─────────────────────────────────────────────────────
-
-describe('ensureToken', () => {
-  const makeRes = () => ({
-    status: jest.fn().mockReturnThis(),
-    json: jest.fn().mockReturnThis(),
-  });
-
-  it('returns 401 when session has no access token', async () => {
-    const req = { session: {} };
-    const res = makeRes();
-    const next = jest.fn();
-
-    await ensureToken(req, res, next);
-
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Not authenticated' });
-    expect(next).not.toHaveBeenCalled();
-  });
-
-  it('calls next when token is present and not near expiry', async () => {
-    const req = { session: { accessToken: 'valid-token', tokenExpiry: Date.now() + 120_000 } };
-    const next = jest.fn();
-
-    await ensureToken(req, makeRes(), next);
-
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('refreshes the token when it is within 60s of expiry', async () => {
-    const req = {
-      session: {
-        accessToken: 'old-token',
-        refreshToken: 'refresh-tok',
-        tokenExpiry: Date.now() - 1000, // already expired
-      },
-    };
-    const next = jest.fn();
-    axios.post.mockResolvedValue({ data: { access_token: 'new-token', expires_in: 3600 } });
-
-    await ensureToken(req, makeRes(), next);
-
-    expect(req.session.accessToken).toBe('new-token');
-    expect(next).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns 401 and destroys the session when refresh fails', async () => {
-    const destroy = jest.fn();
-    const req = {
-      session: {
-        accessToken: 'old-token',
-        refreshToken: 'bad-tok',
-        tokenExpiry: Date.now() - 1000,
-        destroy,
-      },
-    };
-    const res = makeRes();
-    const next = jest.fn();
-    axios.post.mockRejectedValue(new Error('Refresh failed'));
-
-    await ensureToken(req, res, next);
-
-    expect(destroy).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: 'Token refresh failed' });
-    expect(next).not.toHaveBeenCalled();
-  });
-});
 
 // ── Protected routes return 401 without a session ─────────────────────────────
 
@@ -109,7 +38,6 @@ describe('auth guard — unauthenticated requests', () => {
 describe('GET /login', () => {
   it('redirects to Spotify authorization URL', async () => {
     const res = await request(app).get('/login').redirects(0);
-
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('accounts.spotify.com/authorize');
   });
@@ -117,7 +45,6 @@ describe('GET /login', () => {
   it('includes client_id, response_type, redirect_uri, scope, and state', async () => {
     const res = await request(app).get('/login').redirects(0);
     const url = new URL(res.headers.location);
-
     expect(url.searchParams.get('client_id')).toBe('test-client-id');
     expect(url.searchParams.get('response_type')).toBe('code');
     expect(url.searchParams.get('redirect_uri')).toContain('/callback');
@@ -128,7 +55,6 @@ describe('GET /login', () => {
   it('includes all required scopes', async () => {
     const res = await request(app).get('/login').redirects(0);
     const scope = new URL(res.headers.location).searchParams.get('scope');
-
     const required = [
       'user-library-read', 'user-library-modify',
       'playlist-read-private', 'playlist-modify-private',
@@ -143,27 +69,20 @@ describe('GET /login', () => {
 describe('GET /callback', () => {
   it('redirects to /?error=<value> when Spotify returns an error param', async () => {
     const res = await request(app).get('/callback?error=access_denied').redirects(0);
-
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('error=access_denied');
   });
 
   it('redirects to /?error=invalid_callback with no session state', async () => {
-    const res = await request(app)
-      .get('/callback?code=test&state=randomstate')
-      .redirects(0);
-
+    const res = await request(app).get('/callback?code=test&state=randomstate').redirects(0);
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('error=invalid_callback');
   });
 
   it('redirects to /?error=state_mismatch when state does not match', async () => {
-    // agent preserves the session cookie across requests
     const agent = request.agent(app);
     await agent.get('/login').redirects(0);
-
     const res = await agent.get('/callback?code=x&state=wrong-state').redirects(0);
-
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain('error=state_mismatch');
   });
@@ -177,10 +96,7 @@ describe('GET /callback', () => {
       data: { access_token: 'new-access', refresh_token: 'new-refresh', expires_in: 3600 },
     });
 
-    const callbackRes = await agent
-      .get(`/callback?code=auth-code&state=${state}`)
-      .redirects(0);
-
+    const callbackRes = await agent.get(`/callback?code=auth-code&state=${state}`).redirects(0);
     expect(callbackRes.status).toBe(302);
     expect(callbackRes.headers.location).toBe('/app');
   });
@@ -192,17 +108,12 @@ describe('GET /callback', () => {
 
     axios.post.mockRejectedValue(new Error('Spotify token error'));
 
-    const callbackRes = await agent
-      .get(`/callback?code=bad-code&state=${state}`)
-      .redirects(0);
-
+    const callbackRes = await agent.get(`/callback?code=bad-code&state=${state}`).redirects(0);
     expect(callbackRes.status).toBe(302);
     expect(callbackRes.headers.location).toContain('error=token_exchange_failed');
   });
 
   it('redirects already-authenticated users to /app when oauthState is missing', async () => {
-    // Simulate a duplicate callback hit after a successful auth:
-    // agent has a session with accessToken but no oauthState
     const agent = request.agent(app);
     const loginRes = await agent.get('/login').redirects(0);
     const state = new URL(loginRes.headers.location).searchParams.get('state');

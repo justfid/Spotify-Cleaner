@@ -1,8 +1,10 @@
-const path = require('path');
-const spotify = require('./spotify');
-const { ensureToken } = require('./auth');
+'use strict';
 
-function registerRoutes(app) {
+const path = require('path');
+const ensureToken = require('../middleware/auth');
+const spotify = require('../services/spotify');
+
+module.exports = function registerPlaylistsRoutes(app) {
   app.get('/api/token', ensureToken, (req, res) => {
     res.json({ access_token: req.session.accessToken });
   });
@@ -39,28 +41,11 @@ function registerRoutes(app) {
     } catch (err) { next(err); }
   });
 
-  app.get('/api/track-analysis/:id', ensureToken, async (req, res, next) => {
-    try { res.json(await spotify.getTrackAnalysis(req, req.params.id)); } catch (err) { next(err); }
-  });
-
-  app.put('/api/player/play', ensureToken, async (req, res, next) => {
-    const { device_id, uri } = req.body;
-    if (!device_id || !uri) return res.status(400).json({ error: 'device_id and uri required' });
-    try {
-      await spotify.play(req, device_id, uri);
-      res.json({ ok: true });
-    } catch (err) { next(err); }
-  });
-
-  app.put('/api/player/pause', ensureToken, async (req, res, next) => {
-    try {
-      await spotify.pause(req);
-      res.json({ ok: true });
-    } catch (err) { next(err); }
-  });
-
-  app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-  app.get('/app', ensureToken, (req, res) => res.sendFile(path.join(__dirname, 'public', 'app.html')));
-}
-
-module.exports = { registerRoutes };
+  // Page routes
+  app.get('/', (req, res) =>
+    res.sendFile(path.join(__dirname, '..', '..', 'public', 'index.html'))
+  );
+  app.get('/app', ensureToken, (req, res) =>
+    res.sendFile(path.join(__dirname, '..', '..', 'public', 'app.html'))
+  );
+};

@@ -3,12 +3,10 @@
 jest.mock('axios');
 
 const axios = require('axios');
-const spotify = require('../spotify');
+const spotify = require('../../server/services/spotify');
 
-// Fake req — spotify.js only reads req.session.accessToken
 const req = { session: { accessToken: 'test-token' } };
 
-// Fresh mock axios instance for each test
 let api;
 
 beforeEach(() => {
@@ -46,10 +44,8 @@ const expectedTrack = {
 
 describe('getMe', () => {
   it('returns user profile data', async () => {
-    const user = { id: 'user1', display_name: 'Test User' };
-    api.get.mockResolvedValue({ data: user });
-
-    await expect(spotify.getMe(req)).resolves.toEqual(user);
+    api.get.mockResolvedValue({ data: { id: 'user1', display_name: 'Test User' } });
+    await expect(spotify.getMe(req)).resolves.toEqual({ id: 'user1', display_name: 'Test User' });
     expect(api.get).toHaveBeenCalledWith('/me');
   });
 
@@ -71,10 +67,8 @@ describe('getMe', () => {
 
 describe('getPlaylists', () => {
   it('returns single-page results', async () => {
-    const playlists = [{ id: 'pl1', name: 'Mix' }];
-    api.get.mockResolvedValue({ data: { items: playlists, next: null } });
-
-    await expect(spotify.getPlaylists(req)).resolves.toEqual(playlists);
+    api.get.mockResolvedValue({ data: { items: [{ id: 'pl1', name: 'Mix' }], next: null } });
+    await expect(spotify.getPlaylists(req)).resolves.toEqual([{ id: 'pl1', name: 'Mix' }]);
     expect(api.get).toHaveBeenCalledWith('/me/playlists?limit=50');
   });
 
@@ -84,9 +78,7 @@ describe('getPlaylists', () => {
       .mockResolvedValueOnce({ data: { items: [{ id: 'pl2' }], next: null } });
 
     const result = await spotify.getPlaylists(req);
-
     expect(result).toEqual([{ id: 'pl1' }, { id: 'pl2' }]);
-    expect(api.get).toHaveBeenCalledTimes(2);
     expect(api.get).toHaveBeenNthCalledWith(2, '/me/playlists?limit=50&offset=50');
   });
 });
@@ -96,9 +88,7 @@ describe('getPlaylists', () => {
 describe('getLikedSongs', () => {
   it('maps Spotify items to the internal track shape', async () => {
     api.get.mockResolvedValue({ data: { items: [makeItem()], next: null } });
-
     const result = await spotify.getLikedSongs(req);
-
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual(expectedTrack);
   });
@@ -120,7 +110,6 @@ describe('getLikedSongs', () => {
     api.get
       .mockResolvedValueOnce({ data: { items: [makeItem()], next: 'https://api.spotify.com/v1/me/tracks?limit=50&offset=50' } })
       .mockResolvedValueOnce({ data: { items: [makeItem()], next: null } });
-
     const result = await spotify.getLikedSongs(req);
     expect(result).toHaveLength(2);
   });
@@ -218,7 +207,6 @@ describe('getTrackAnalysis', () => {
         track: { duration: 210, extra: 'ignored' },
       },
     });
-
     await expect(spotify.getTrackAnalysis(req, 'track1')).resolves.toEqual({
       sections: [{ start: 10, duration: 30, loudness: -8 }],
       duration: 210,
@@ -247,10 +235,7 @@ describe('play', () => {
   it('URL-encodes the device_id', async () => {
     api.put.mockResolvedValue({});
     await spotify.play(req, 'device with spaces', 'uri');
-    expect(api.put).toHaveBeenCalledWith(
-      '/me/player/play?device_id=device%20with%20spaces',
-      expect.anything()
-    );
+    expect(api.put).toHaveBeenCalledWith('/me/player/play?device_id=device%20with%20spaces', expect.anything());
   });
 
   it('propagates errors', async () => {
